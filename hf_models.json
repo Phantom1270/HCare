@@ -1,0 +1,42 @@
+[
+  {
+    "id": "imfarzanansari/skintelligent-acne",
+    "downloads": 15731
+  },
+  {
+    "id": "dima806/skin_types_image_detection",
+    "downloads": 8243
+  },
+  {
+    "id": "Anwarkh1/Skin_Cancer-Image_Classification",
+    "downloads": 802
+  },
+  {
+    "id": "Jayanth2002/dinov2-base-finetuned-SkinDisease",
+    "downloads": 796
+  },
+  {
+    "id": "HotJellyBean/skin-disease-classifier",
+    "downloads": 143
+  },
+  {
+    "id": "histai/SPIDER-skin-model",
+    "downloads": 104
+  },
+  {
+    "id": "skintaglabs/siglip-skin-lesion-classifier",
+    "downloads": 86
+  },
+  {
+    "id": "Tanishq77/skin-condition-classifier",
+    "downloads": 74
+  },
+  {
+    "id": "LaurianeMD/vit-skin-disease",
+    "downloads": 73
+  },
+  {
+    "id": "actavkid/vit-large-patch32-384-finetuned-skin-lesion-classification",
+    "downloads": 59
+  }
+]
