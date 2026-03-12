@@ -17,6 +17,16 @@ import re
 from datetime import datetime
 import concurrent.futures
 import extra_streamlit_components as stx
+from dotenv import load_dotenv
+from pymongo import MongoClient
+
+load_dotenv()
+
+# Try Streamlit secrets first (for deployment)
+if "MONGO_URI" in st.secrets:
+    MONGO_URI = st.secrets["MONGO_URI"]
+else:
+    MONGO_URI = os.getenv("MONGO_URI")
 
 st.set_page_config(page_title="MedVigilant", page_icon="🛡️", layout="wide")
 
@@ -29,14 +39,21 @@ cookie_manager = stx.CookieManager()
 # ---------------------------------------------------------
 
 # Cloudinary Config
+if "CLOUDINARY_CLOUD_NAME" in st.secrets:
+    CLOUD_NAME = st.secrets["CLOUDINARY_CLOUD_NAME"]
+    API_KEY = st.secrets["CLOUDINARY_API_KEY"]
+    API_SECRET = st.secrets["CLOUDINARY_API_SECRET"]
+else:
+    CLOUD_NAME = os.getenv("CLOUDINARY_CLOUD_NAME")
+    API_KEY = os.getenv("CLOUDINARY_API_KEY")
+    API_SECRET = os.getenv("CLOUDINARY_API_SECRET")
+
 cloudinary.config(
-    cloud_name="dxhxvydia",
-    api_key="737777443667176",
-    api_secret="2MLn-yOx-oc2LvrJ9qTdlCVXxIg"
+    cloud_name=CLOUD_NAME,
+    api_key=API_KEY,
+    api_secret=API_SECRET
 )
 
-# MongoDB Config
-MONGO_URI = "mongodb+srv://ujjwal:ujjwal123@phantom.nk6zp.mongodb.net/HCare_DB?retryWrites=true&w=majority"
 
 @st.cache_resource
 def init_db():
