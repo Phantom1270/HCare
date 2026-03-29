@@ -705,9 +705,14 @@ if uploaded_file is not None:
                 results = classifier(image)
                 
             # the pipeline returns a list of dicts: [{'label': 'Melanoma', 'score': 0.95}, ...]
-            top_prediction = results[0]
-            disease = top_prediction['label']
-            prob = top_prediction['score'] * 100.0
+            st.subheader("Top Predictions")
+
+            for i, pred in enumerate(results[:3]):
+                label = pred['label']
+                score = pred['score'] * 100
+    
+                st.write(f"{i+1}. **{label}** — {score:.2f}%")
+                st.progress(score / 100)
             
             # Risk Mapping for the 31 DINOv2 classes
             red_urgent = [
