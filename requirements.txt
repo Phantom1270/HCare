@@ -10,3 +10,4 @@ easyocr
 numpy
 pillow
 extra-streamlit-components
+google-generativeai

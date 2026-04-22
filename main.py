@@ -20,6 +20,9 @@ import extra_streamlit_components as stx
 from dotenv import load_dotenv
 from pymongo import MongoClient
 
+# Safety Evaluation Layer — Runtime Guardrails
+from safety.guardrails import sanitize_input, validate_image, validate_output, confidence_gate
+
 load_dotenv()
 
 # Try Streamlit secrets first (for deployment)
@@ -440,34 +443,46 @@ with st.sidebar:
     
     if st.button("Add Drug", type="primary"):
         if new_drug:
-            with st.spinner(f"Checking '{new_drug}'..."):
-                rxcui = get_rxcui(new_drug)
+            # ── Safety Guardrail: Sanitize drug name input ──
+            safe_drug, input_flags = sanitize_input(new_drug, max_length=200)
+            if input_flags:
+                st.error(f"🛡️ **Input flagged by safety guardrail:** {', '.join(input_flags)}")
+            else:
+                # ── Safety Guardrail: Validate uploaded image ──
+                if drug_image_file:
+                    img_valid, img_flags = validate_image(drug_image_file)
+                    if not img_valid:
+                        st.error(f"🛡️ **Image rejected by safety guardrail:** {', '.join(img_flags)}")
+                        drug_image_file = None  # Skip image upload
                 
-                if rxcui:
-                    existing_drug = cabinet_col.find_one({"rxcui": rxcui, "username": st.session_state.username})
-                    if existing_drug:
-                        st.warning(f"⚠️ **{new_drug}** is already in your cabinet!")
-                    else:
-                        is_dangerous, conflict_msg = check_interactions(new_drug)
-                        
-                        if is_dangerous:
-                            st.error(f"🚨 **DANGER!** {conflict_msg}")
+                with st.spinner(f"Checking '{safe_drug}'..."):
+                    rxcui = get_rxcui(safe_drug)
+                    
+                    if rxcui:
+                        existing_drug = cabinet_col.find_one({"rxcui": rxcui, "username": st.session_state.username})
+                        if existing_drug:
+                            st.warning(f"⚠️ **{safe_drug}** is already in your cabinet!")
                         else:
-                            image_url = None
-                            if drug_image_file:
-                                try:
-                                    temp_filename = f"temp_{uuid.uuid4().hex}.jpg"
-                                    Image.open(drug_image_file).convert('RGB').save(temp_filename)
-                                    upload_result = cloudinary.uploader.upload(temp_filename, folder="MedVigilant")
-                                    os.remove(temp_filename)
-                                    image_url = upload_result.get("secure_url")
-                                except Exception as e:
-                                    st.error(f"Failed to upload image: {e}")
-                                    
-                            cabinet_col.insert_one({"name": new_drug, "rxcui": rxcui, "username": st.session_state.username, "image_url": image_url})
-                            st.success(f"✅ **{new_drug}** added safely!")
-                else:
-                    st.warning(f"⚠️ Could not find chemical ID for **{new_drug}**. Try another name.")
+                            is_dangerous, conflict_msg = check_interactions(safe_drug)
+                            
+                            if is_dangerous:
+                                st.error(f"🚨 **DANGER!** {conflict_msg}")
+                            else:
+                                image_url = None
+                                if drug_image_file:
+                                    try:
+                                        temp_filename = f"temp_{uuid.uuid4().hex}.jpg"
+                                        Image.open(drug_image_file).convert('RGB').save(temp_filename)
+                                        upload_result = cloudinary.uploader.upload(temp_filename, folder="MedVigilant")
+                                        os.remove(temp_filename)
+                                        image_url = upload_result.get("secure_url")
+                                    except Exception as e:
+                                        st.error(f"Failed to upload image: {e}")
+                                        
+                                cabinet_col.insert_one({"name": safe_drug, "rxcui": rxcui, "username": st.session_state.username, "image_url": image_url})
+                                st.success(f"✅ **{safe_drug}** added safely!")
+                    else:
+                        st.warning(f"⚠️ Could not find chemical ID for **{safe_drug}**. Try another name.")
         else:
             st.warning("Please enter a drug name.")
             
@@ -588,6 +603,13 @@ st.markdown("Scan a medicine box or bottle to extract manufacturing details and 
 
 label_file = st.file_uploader("Upload an image of a medicine label", type=["jpg", "jpeg", "png"], key="label_scan_input")
 
+# ── Safety Guardrail: Validate label image before processing ──
+if label_file:
+    label_img_valid, label_img_flags = validate_image(label_file)
+    if not label_img_valid:
+        st.error(f"🛡️ **Image rejected by safety guardrail:** {', '.join(label_img_flags)}")
+        label_file = None  # Prevent downstream processing
+
 # Store extracted drugs in session state so multiselect widget doesn't reset on stream-rerun
 if "label_extracted_drugs" not in st.session_state:
     st.session_state.label_extracted_drugs = []
@@ -671,6 +693,13 @@ st.markdown("Upload a photo of a skin condition to receive a preliminary triage 
 
 uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
 
+# ── Safety Guardrail: Validate skin image before classification ──
+if uploaded_file:
+    skin_img_valid, skin_img_flags = validate_image(uploaded_file)
+    if not skin_img_valid:
+        st.error(f"🛡️ **Image rejected by safety guardrail:** {', '.join(skin_img_flags)}")
+        uploaded_file = None  # Prevent downstream processing
+
 if uploaded_file is not None:
     col1, col2 = st.columns(2)
     
@@ -703,6 +732,15 @@ if uploaded_file is not None:
                 classifier = load_disease_model()
                 # Run inference
                 results = classifier(image)
+            
+            # ── Safety Guardrail: Confidence gate ──
+            gated_prediction, gate_flags = confidence_gate(results)
+            
+            if gate_flags:
+                st.warning(f"🛡️ **Confidence Gate:** {'; '.join(gate_flags)}")
+                st.info("The model is not confident enough for a reliable prediction. "
+                        "This may be a non-medical image or an unusual condition. "
+                        "Please consult a dermatologist.")
                 
             # the pipeline returns a list of dicts: [{'label': 'Melanoma', 'score': 0.95}, ...]
             st.subheader("Top Predictions")
@@ -801,5 +839,55 @@ if uploaded_file is not None:
         except Exception as e:
             st.error(f"Error processing image: {e}")
 
+# ---------------------------------------------------------
+# NEW: Ask MedVigilant (LLM-powered Safety Q&A)
+# ---------------------------------------------------------
+st.divider()
+st.header("🤖 Ask MedVigilant")
+st.markdown("Ask natural-language questions about your medications and drug safety. "
+            "Powered by a constrained LLM with multi-layer safety guardrails.")
+
+user_query = st.text_input("e.g. 'Can I drink alcohol while on Warfarin?'", key="ask_mv_input")
+
+if st.button("Ask", key="ask_mv_btn", type="primary"):
+    if user_query:
+        # ── Safety Guardrail Layer 1: Input sanitization ──
+        safe_query, input_flags = sanitize_input(user_query)
+        
+        if input_flags:
+            st.error(f"🛡️ **Query blocked by safety guardrail:** {', '.join(input_flags)}")
+        else:
+            with st.spinner("Consulting MedVigilant AI..."):
+                try:
+                    from llm_query import ask_medvigilant
+                    
+                    # Get user's current medications for context
+                    cabinet_drugs = [d['name'] for d in cabinet_col.find({"username": st.session_state.username})]
+                    
+                    # Call the constrained LLM
+                    llm_response = ask_medvigilant(safe_query, cabinet_drugs)
+                    
+                    # ── Safety Guardrail Layer 2: Output validation ──
+                    safe_response, output_flags = validate_output(llm_response)
+                    
+                    if output_flags:
+                        st.error("🛡️ **Response flagged by output safety filter.** Showing fallback.")
+                        st.info("This query may require professional medical advice. "
+                                "Please consult your healthcare provider.")
+                        with st.expander("🔍 Safety Filter Details"):
+                            for flag in output_flags:
+                                st.write(f"- {flag}")
+                    else:
+                        st.markdown(safe_response)
+                        st.caption("⚠️ This is AI-generated guidance, not medical advice. "
+                                   "Always consult a healthcare professional.")
+                        
+                except ImportError:
+                    st.error("LLM module not configured. Install `google-generativeai` and set GEMINI_API_KEY.")
+                except Exception as e:
+                    st.error(f"Error: {str(e)[:100]}")
+    else:
+        st.warning("Please enter a question.")
+
 st.markdown("---")
-st.markdown("🛡️ MedVigilant | AI-powered medical safety assistant")
+st.markdown("🛡️ MedVigilant | AI-powered medical safety assistant | Safety Evaluation Layer v1.0")
