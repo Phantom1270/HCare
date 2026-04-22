@@ -800,3 +800,6 @@ if uploaded_file is not None:
 
         except Exception as e:
             st.error(f"Error processing image: {e}")
+
+st.markdown("---")
+st.markdown("🛡️ MedVigilant | AI-powered medical safety assistant")
